@@ -1,0 +1,67 @@
+//@version=4
+study(title = "Enhanced Volume Rate of Change", shorttitle="Enhanced VRoC", overlay=false)
+
+// Inputs
+rocp = input(26, title="RoC Period", minval=1)
+smooth = input(10, title="Smoothing", minval=1)
+threshold = input(1.5, title="Threshold for Signals", type=input.float)
+smoothing_method = input(title="Smoothing Method", defval="EMA", options=["EMA", "WMA", "KAMA", "HMA"])
+
+// Colors
+col_grow_above = color.new(color.green, 35)
+col_grow_below = color.new(color.red, 35)
+col_fall_above = color.new(color.green, 35)
+col_fall_below = color.new(color.red, 35)
+
+// Volume Rate of Change Calculation
+vroc = roc(volume, rocp)
+
+// Kaufman Adaptive Moving Average Function
+kama(src, length, fast=2, slow=30) =>
+    change = abs(src - src[length])
+    volatility = sum(abs(src - src[1]), length)
+    efficiency_ratio = change / volatility
+    fast_alpha = 2 / (fast + 1)
+    slow_alpha = 2 / (slow + 1)
+    alpha = pow(efficiency_ratio * (fast_alpha - slow_alpha) + slow_alpha, 2)
+    kama = na(kama[1]) ? sma(src, length) : kama[1] + alpha * (src - kama[1])
+    kama
+
+// Hull Moving Average Function
+hma(src, length) =>
+    wma(2 * wma(src, length / 2) - wma(src, length), round(sqrt(length)))
+
+// Smoothed VRoC Calculation
+vroc_smoothed = 
+    if smoothing_method == "EMA"
+        ema(vroc, smooth)
+    else if smoothing_method == "WMA"
+        wma(vroc, smooth)
+    else if smoothing_method == "KAMA"
+        kama(vroc, smooth)
+    else if smoothing_method == "HMA"
+        hma(vroc, smooth)
+    else
+        na
+
+// Dynamic Threshold Calculation
+avg_vroc = sma(vroc_smoothed, 50)
+upper_threshold = avg_vroc + threshold
+lower_threshold = avg_vroc - threshold
+
+// Plotting
+plot(vroc_smoothed, title="Smoothed VRoC", color=color.blue, linewidth=2)
+hline(upper_threshold, "Upper Threshold", color=color.red)
+hline(lower_threshold, "Lower Threshold", color=color.green)
+
+// Signal Conditions
+buy_signal = crossover(vroc_smoothed, lower_threshold)
+sell_signal = crossunder(vroc_smoothed, upper_threshold)
+
+// Plot Buy/Sell Signals
+plotshape(series=buy_signal, title="Buy Signal", location=location.belowbar, color=color.green, style=shape.labelup, text="BUY")
+plotshape(series=sell_signal, title="Sell Signal", location=location.abovebar, color=color.red, style=shape.labeldown, text="SELL")
+
+// Alerts
+alertcondition(buy_signal, title="Buy Signal Alert", message="Volume-based Buy Signal")
+alertcondition(sell_signal, title="Sell Signal Alert", message="Volume-based Sell Signal")
